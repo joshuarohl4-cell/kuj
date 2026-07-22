@@ -2,6 +2,7 @@ package com.example.addon;
 
 import com.example.addon.commands.CommandExample;
 import com.example.addon.hud.HudExample;
+import com.example.addon.modules.AutoRelog;
 import com.example.addon.modules.Homemeta;
 import com.example.addon.modules.ModuleExample;
 import com.example.addon.modules.RenderDistanceToggle;
@@ -32,6 +33,7 @@ public class AddonTemplate extends MeteorAddon {
         Modules.get().add(new RenderDistanceToggle());
         Modules.get().add(new ResetHome());
         Modules.get().add(new SpawnerChunks());
+        Modules.get().add(new AutoRelog());
 
         // Commands
         Commands.add(new CommandExample());

@@ -209,4 +209,62 @@ public class MinecraftAccess {
         } catch (Exception e) {}
         return spawnerChunks;
     }
+    
+    public static void disconnect(Object mc) {
+        try {
+            Object world = getWorld(mc);
+            if (world != null) {
+                var method = world.getClass().getMethod("method_29634");
+                method.invoke(world);
+            }
+        } catch (Exception e) {
+            // Fallback - try client method
+            try {
+                var method = mc.getClass().getMethod("method_29634");
+                method.invoke(mc);
+            } catch (Exception e2) {
+                // Another fallback - disconnect via integrated server
+                try {
+                    var field = mc.getClass().getDeclaredField("field_1699"); // integratedServer
+                    field.setAccessible(true);
+                    var server = field.get(mc);
+                    if (server != null) {
+                        var method = server.getClass().getMethod("method_29634");
+                        method.invoke(server);
+                    }
+                } catch (Exception e3) {
+                    // Last resort - schedule disconnect
+                    try {
+                        var method = mc.getClass().getMethod("stop");
+                        method.invoke(mc);
+                    } catch (Exception e4) {}
+                }
+            }
+        }
+    }
+    
+    public static void connectToLastServer(Object mc) {
+        try {
+            // Get the client connection and reconnect
+            var method = mc.getClass().getMethod("method_29635");
+            method.invoke(mc);
+        } catch (Exception e) {
+            // Fallback - try to connect to saved server info
+            try {
+                var field = mc.getClass().getDeclaredField("field_1698"); // currentServerEntry
+                field.setAccessible(true);
+                var serverEntry = field.get(mc);
+                if (serverEntry != null) {
+                    var method = mc.getClass().getMethod("method_29636", serverEntry.getClass());
+                    method.invoke(mc, serverEntry);
+                }
+            } catch (Exception e2) {
+                // Fallback - use standard connect method
+                try {
+                    var method = mc.getClass().getMethod("connect");
+                    method.invoke(mc);
+                } catch (Exception e3) {}
+            }
+        }
+    }
 }
