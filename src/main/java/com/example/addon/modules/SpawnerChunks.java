@@ -1,7 +1,6 @@
 package com.example.addon.modules;
 
 import com.example.addon.AddonTemplate;
-import com.example.addon.utils.MinecraftAccess;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -18,6 +17,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.phys.AABB;
 
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 public class SpawnerChunks extends Module {
@@ -52,12 +52,170 @@ public class SpawnerChunks extends Module {
     private final Set<BlockPos> spawnerChunks = new HashSet<>();
     private int tickCounter = 0;
 
+    // Cached method/field references
+    private static Object worldField;
+    private static Object playerField;
+    private static Object optionsField;
+    private static Object viewDistanceField;
+    private static Object worldMinYMethod;
+    private static Object worldHeightMethod;
+    private static boolean reflectionInitialized = false;
+
     public SpawnerChunks() {
         super(AddonTemplate.CATEGORY, "spawner-chunks", "Highlights chunks that contain a mob spawner.");
     }
 
+    private static void initReflection() {
+        if (reflectionInitialized) return;
+        try {
+            Class<?> mcClass = Class.forName("net.minecraft.client.MinecraftClient");
+            
+            // Get fields
+            for (var f : mcClass.getDeclaredFields()) {
+                String typeName = f.getType().getName();
+                if (typeName.contains("ClientWorld") || typeName.contains("World")) {
+                    worldField = f;
+                    f.setAccessible(true);
+                } else if (typeName.contains("PlayerEntity") || typeName.contains("ClientPlayerEntity")) {
+                    playerField = f;
+                    f.setAccessible(true);
+                } else if (typeName.contains("GameOptions")) {
+                    optionsField = f;
+                    f.setAccessible(true);
+                }
+            }
+            
+            // Get methods for world
+            Class<?> worldClass = null;
+            for (Object wf : new Object[]{worldField}) {
+                if (wf != null) {
+                    worldClass = ((java.lang.reflect.Field)wf).getType();
+                    break;
+                }
+            }
+            
+            if (worldClass != null) {
+                for (var m : worldClass.getDeclaredMethods()) {
+                    String name = m.getName();
+                    if (name.toLowerCase().contains("bottom") && m.getParameterCount() == 0) {
+                        worldMinYMethod = m;
+                        m.setAccessible(true);
+                    }
+                    if ((name.toLowerCase().contains("height") || name.toLowerCase().contains("top")) && m.getParameterCount() == 0) {
+                        worldHeightMethod = m;
+                        m.setAccessible(true);
+                    }
+                }
+            }
+            
+            reflectionInitialized = true;
+        } catch (Exception e) {
+            // Reflection failed
+        }
+    }
+
+    private Object getWorld() {
+        try {
+            if (worldField == null) return null;
+            return ((java.lang.reflect.Field)worldField).get(mc);
+        } catch (Exception e) { return null; }
+    }
+
+    private Object getPlayer() {
+        try {
+            if (playerField == null) return null;
+            return ((java.lang.reflect.Field)playerField).get(mc);
+        } catch (Exception e) { return null; }
+    }
+
+    private int getWorldMinY() {
+        try {
+            Object world = getWorld();
+            if (world == null || worldMinYMethod == null) return 0;
+            return (int) ((java.lang.reflect.Method)worldMinYMethod).invoke(world);
+        } catch (Exception e) { return 0; }
+    }
+
+    private int getWorldHeight() {
+        try {
+            Object world = getWorld();
+            if (world == null || worldHeightMethod == null) return 320;
+            return (int) ((java.lang.reflect.Method)worldHeightMethod).invoke(world);
+        } catch (Exception e) { return 320; }
+    }
+
+    private int getViewDistance() {
+        try {
+            if (optionsField == null) return 8;
+            Object options = ((java.lang.reflect.Field)optionsField).get(mc);
+            if (options == null) return 8;
+            
+            // Find view distance option
+            for (var f : options.getClass().getDeclaredFields()) {
+                String typeName = f.getType().getName();
+                if (typeName.contains("Option") || typeName.contains("OptionSlider")) {
+                    viewDistanceField = f;
+                    f.setAccessible(true);
+                    Object opt = f.get(options);
+                    if (opt != null) {
+                        var method = opt.getClass().getMethod("getValue");
+                        return (int) method.invoke(opt);
+                    }
+                }
+            }
+        } catch (Exception e) {}
+        return 8;
+    }
+
+    private double getPlayerPos(Object player, String axis) {
+        try {
+            // Try field approach
+            for (var f : player.getClass().getSuperclass().getDeclaredFields()) {
+                String fname = f.getName();
+                if (axis.equals("x") && fname.contains("x")) {
+                    f.setAccessible(true);
+                    return f.getDouble(player);
+                }
+                if (axis.equals("y") && fname.contains("y")) {
+                    f.setAccessible(true);
+                    return f.getDouble(player);
+                }
+                if (axis.equals("z") && fname.contains("z")) {
+                    f.setAccessible(true);
+                    return f.getDouble(player);
+                }
+            }
+        } catch (Exception e) {}
+        return 0;
+    }
+
+    private Object getChunk(Object world, int cx, int cz) {
+        try {
+            for (var m : world.getClass().getMethods()) {
+                if (m.getName().toLowerCase().contains("getchunk") && m.getParameterCount() == 2) {
+                    m.setAccessible(true);
+                    return m.invoke(world, cx, cz);
+                }
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+
+    private Map<?, ?> getBlockEntities(Object chunk) {
+        try {
+            for (var f : chunk.getClass().getDeclaredFields()) {
+                if (f.getType().getSimpleName().contains("Map")) {
+                    f.setAccessible(true);
+                    return (Map<?, ?>) f.get(chunk);
+                }
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+
     @Override
     public void onActivate() {
+        initReflection();
         spawnerChunks.clear();
         rescan();
     }
@@ -77,23 +235,21 @@ public class SpawnerChunks extends Module {
     @EventHandler
     private void onRender(Render3DEvent event) {
         try {
-            Object world = MinecraftAccess.getWorld(mc);
+            Object world = getWorld();
             if (world == null) return;
             
-            int minY = MinecraftAccess.getWorldMinY(mc);
-            int maxY = minY + MinecraftAccess.getWorldHeight(mc);
+            int minY = getWorldMinY();
+            int maxY = minY + getWorldHeight();
             
             for (BlockPos chunkPos : spawnerChunks) {
                 int startX = chunkPos.getX() << 4;
                 int startZ = chunkPos.getZ() << 4;
-                int endX = startX + 16;
-                int endZ = startZ + 16;
                 
-                AABB box = new AABB(startX, minY, startZ, endX, maxY, endZ);
+                AABB box = new AABB(startX, minY, startZ, startX + 16, maxY, startZ + 16);
                 event.renderer.box(box, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
             }
         } catch (Exception e) {
-            // Ignore render errors
+            // Silent fail
         }
     }
 
@@ -101,30 +257,28 @@ public class SpawnerChunks extends Module {
         try {
             spawnerChunks.clear();
             
-            Object world = MinecraftAccess.getWorld(mc);
-            Object player = MinecraftAccess.getPlayer(mc);
+            Object world = getWorld();
+            Object player = getPlayer();
             if (world == null || player == null) return;
             
-            int viewDist = MinecraftAccess.getViewDistance(mc);
-            double px = MinecraftAccess.getPlayerX(mc);
-            double pz = MinecraftAccess.getPlayerZ(mc);
+            int viewDist = getViewDistance();
+            double px = getPlayerPos(player, "x");
+            double pz = getPlayerPos(player, "z");
             int playerChunkX = (int) Math.floor(px / 16.0);
             int playerChunkZ = (int) Math.floor(pz / 16.0);
             
-            var getChunk = world.getClass().getMethod("getChunk", int.class, int.class);
-            
             for (int cx = playerChunkX - viewDist; cx <= playerChunkX + viewDist; cx++) {
                 for (int cz = playerChunkZ - viewDist; cz <= playerChunkZ + viewDist; cz++) {
-                    Object chunk = getChunk.invoke(world, cx, cz);
+                    Object chunk = getChunk(world, cx, cz);
                     if (chunk == null) continue;
                     
-                    var getBlockEntities = chunk.getClass().getMethod("getBlockEntities");
-                    java.util.Map<?, ?> blockEntities = (java.util.Map<?, ?>) getBlockEntities.invoke(chunk);
+                    Map<?, ?> blockEntities = getBlockEntities(chunk);
+                    if (blockEntities == null) continue;
                     
                     boolean hasSpawner = false;
                     for (Object blockEntity : blockEntities.values()) {
                         String name = blockEntity.getClass().getSimpleName();
-                        if (name.contains("MobSpawner") || name.contains("SpawnerBlockEntity")) {
+                        if (name.contains("MobSpawner") || name.contains("SpawnerBlockEntity") || name.contains("Spawner")) {
                             hasSpawner = true;
                             break;
                         }
@@ -136,7 +290,7 @@ public class SpawnerChunks extends Module {
                 }
             }
         } catch (Exception e) {
-            // Ignore scan errors
+            // Silent fail
         }
     }
 }
