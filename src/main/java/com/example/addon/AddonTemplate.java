@@ -4,7 +4,9 @@ import com.example.addon.commands.CommandExample;
 import com.example.addon.hud.HudExample;
 import com.example.addon.modules.Homemeta;
 import com.example.addon.modules.ModuleExample;
+import com.example.addon.modules.RenderDistanceToggle;
 import com.example.addon.modules.ResetHome;
+import com.example.addon.modules.SpawnerChunks;
 import com.mojang.logging.LogUtils;
 import meteordevelopment.meteorclient.addons.GithubRepo;
 import meteordevelopment.meteorclient.addons.MeteorAddon;
@@ -27,7 +29,9 @@ public class AddonTemplate extends MeteorAddon {
         // Modules
         Modules.get().add(new ModuleExample());
         Modules.get().add(new Homemeta());
+        Modules.get().add(new RenderDistanceToggle());
         Modules.get().add(new ResetHome());
+        Modules.get().add(new SpawnerChunks());
 
         // Commands
         Commands.add(new CommandExample());

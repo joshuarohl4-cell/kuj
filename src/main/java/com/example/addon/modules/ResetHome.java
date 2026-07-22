@@ -1,6 +1,7 @@
 package com.example.addon.modules;
 
 import com.example.addon.AddonTemplate;
+import com.example.addon.utils.MinecraftAccess;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
@@ -26,7 +27,7 @@ public class ResetHome extends Module {
 
     @Override
     public void onActivate() {
-        if (mc.player == null) {
+        if (MinecraftAccess.getPlayer(mc) == null) {
             toggle();
             return;
         }
@@ -34,27 +35,18 @@ public class ResetHome extends Module {
         String homeName = " " + homeNumber.get();
         ChatUtils.info("Resetting " + homeName + "...");
         
-        // Send delhome command
-        sendCommand("delhome " + homeName);
+        MinecraftAccess.sendCommand(mc, "delhome " + homeName);
         
         MeteorExecutor.execute(() -> {
             try {
                 Thread.sleep(600);
             } catch (InterruptedException ignored) {}
             
-            if (mc.player != null) {
-                sendCommand("sethome " + homeName);
+            if (MinecraftAccess.getPlayer(mc) != null) {
+                MinecraftAccess.sendCommand(mc, "sethome " + homeName);
                 ChatUtils.info(homeName + " reset.");
             }
             toggle();
         });
-    }
-    
-    private void sendCommand(String command) {
-        try {
-            mc.player.getClass().getMethod("method_45730", String.class).invoke(mc.player, command);
-        } catch (Exception e) {
-            // Fallback
-        }
     }
 }

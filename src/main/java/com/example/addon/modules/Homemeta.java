@@ -1,6 +1,7 @@
 package com.example.addon.modules;
 
 import com.example.addon.AddonTemplate;
+import com.example.addon.utils.MinecraftAccess;
 import meteordevelopment.meteorclient.settings.IntSetting;
 import meteordevelopment.meteorclient.settings.Setting;
 import meteordevelopment.meteorclient.settings.SettingGroup;
@@ -24,7 +25,7 @@ public class Homemeta extends Module {
 
     @Override
     public void onActivate() {
-        if (mc.player == null) {
+        if (MinecraftAccess.getPlayer(mc) == null) {
             toggle();
             return;
         }
@@ -33,16 +34,7 @@ public class Homemeta extends Module {
         String[] commands = {"delhome " + home, "sethome " + home, "rtp", "home " + home};
         Thread worker = new Thread(() -> {
             for (String command : commands) {
-                mc.execute(() -> {
-                    if (mc.player != null) {
-                        // Use sendCommand method if available
-                        try {
-                            mc.player.getClass().getMethod("method_45730", String.class).invoke(mc.player, command);
-                        } catch (Exception e) {
-                            // Fallback
-                        }
-                    }
-                });
+                mc.execute(() -> MinecraftAccess.sendCommand(mc, command));
                 try {
                     Thread.sleep(450);
                 } catch (InterruptedException ignored) {}
