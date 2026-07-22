@@ -53,6 +53,20 @@ public class MinecraftAccess {
         } catch (Exception e) {}
     }
     
+    public static int getViewDistance(Object mc) {
+        try {
+            var options = mc.getClass().getField("options").get(mc);
+            if (options != null) {
+                Object option = getViewDistanceOption(options);
+                if (option != null) {
+                    var method = option.getClass().getMethod("getValue");
+                    return (int) method.invoke(option);
+                }
+            }
+        } catch (Exception e) {}
+        return 8;
+    }
+    
     public static void reloadChunks(Object mc) {
         try {
             Object world = getWorld(mc);

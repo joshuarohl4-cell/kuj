@@ -1,6 +1,7 @@
 package com.example.addon.modules;
 
 import com.example.addon.AddonTemplate;
+import com.example.addon.utils.MinecraftAccess;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -76,10 +77,11 @@ public class SpawnerChunks extends Module {
     @EventHandler
     private void onRender(Render3DEvent event) {
         try {
-            if (mc.world == null) return;
+            Object world = MinecraftAccess.getWorld(mc);
+            if (world == null) return;
             
-            int minY = mc.world.getBottomY();
-            int maxY = mc.world.getTopY();
+            int minY = MinecraftAccess.getWorldMinY(mc);
+            int maxY = minY + MinecraftAccess.getWorldHeight(mc);
             
             for (BlockPos chunkPos : spawnerChunks) {
                 int startX = chunkPos.getX() << 4;
@@ -99,18 +101,28 @@ public class SpawnerChunks extends Module {
         try {
             spawnerChunks.clear();
             
-            if (mc.world == null || mc.player == null) return;
+            Object world = MinecraftAccess.getWorld(mc);
+            Object player = MinecraftAccess.getPlayer(mc);
+            if (world == null || player == null) return;
             
-            int viewDist = mc.options.getViewDistance().getValue();
-            int playerChunkX = (int) Math.floor(mc.player.getX() / 16.0);
-            int playerChunkZ = (int) Math.floor(mc.player.getZ() / 16.0);
+            int viewDist = MinecraftAccess.getViewDistance(mc);
+            double px = MinecraftAccess.getPlayerX(mc);
+            double pz = MinecraftAccess.getPlayerZ(mc);
+            int playerChunkX = (int) Math.floor(px / 16.0);
+            int playerChunkZ = (int) Math.floor(pz / 16.0);
+            
+            var getChunk = world.getClass().getMethod("getChunk", int.class, int.class);
             
             for (int cx = playerChunkX - viewDist; cx <= playerChunkX + viewDist; cx++) {
                 for (int cz = playerChunkZ - viewDist; cz <= playerChunkZ + viewDist; cz++) {
-                    var chunk = mc.world.getChunk(cx, cz);
-                    boolean hasSpawner = false;
+                    Object chunk = getChunk.invoke(world, cx, cz);
+                    if (chunk == null) continue;
                     
-                    for (var blockEntity : chunk.getBlockEntities().values()) {
+                    var getBlockEntities = chunk.getClass().getMethod("getBlockEntities");
+                    java.util.Map<?, ?> blockEntities = (java.util.Map<?, ?>) getBlockEntities.invoke(chunk);
+                    
+                    boolean hasSpawner = false;
+                    for (Object blockEntity : blockEntities.values()) {
                         String name = blockEntity.getClass().getSimpleName();
                         if (name.contains("MobSpawner") || name.contains("SpawnerBlockEntity")) {
                             hasSpawner = true;
