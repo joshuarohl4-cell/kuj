@@ -52,170 +52,12 @@ public class SpawnerChunks extends Module {
     private final Set<BlockPos> spawnerChunks = new HashSet<>();
     private int tickCounter = 0;
 
-    // Cached method/field references
-    private static Object worldField;
-    private static Object playerField;
-    private static Object optionsField;
-    private static Object viewDistanceField;
-    private static Object worldMinYMethod;
-    private static Object worldHeightMethod;
-    private static boolean reflectionInitialized = false;
-
     public SpawnerChunks() {
         super(AddonTemplate.CATEGORY, "spawner-chunks", "Highlights chunks that contain a mob spawner.");
     }
 
-    private static void initReflection() {
-        if (reflectionInitialized) return;
-        try {
-            Class<?> mcClass = Class.forName("net.minecraft.client.MinecraftClient");
-            
-            // Get fields
-            for (var f : mcClass.getDeclaredFields()) {
-                String typeName = f.getType().getName();
-                if (typeName.contains("ClientWorld") || typeName.contains("World")) {
-                    worldField = f;
-                    f.setAccessible(true);
-                } else if (typeName.contains("PlayerEntity") || typeName.contains("ClientPlayerEntity")) {
-                    playerField = f;
-                    f.setAccessible(true);
-                } else if (typeName.contains("GameOptions")) {
-                    optionsField = f;
-                    f.setAccessible(true);
-                }
-            }
-            
-            // Get methods for world
-            Class<?> worldClass = null;
-            for (Object wf : new Object[]{worldField}) {
-                if (wf != null) {
-                    worldClass = ((java.lang.reflect.Field)wf).getType();
-                    break;
-                }
-            }
-            
-            if (worldClass != null) {
-                for (var m : worldClass.getDeclaredMethods()) {
-                    String name = m.getName();
-                    if (name.toLowerCase().contains("bottom") && m.getParameterCount() == 0) {
-                        worldMinYMethod = m;
-                        m.setAccessible(true);
-                    }
-                    if ((name.toLowerCase().contains("height") || name.toLowerCase().contains("top")) && m.getParameterCount() == 0) {
-                        worldHeightMethod = m;
-                        m.setAccessible(true);
-                    }
-                }
-            }
-            
-            reflectionInitialized = true;
-        } catch (Exception e) {
-            // Reflection failed
-        }
-    }
-
-    private Object getWorld() {
-        try {
-            if (worldField == null) return null;
-            return ((java.lang.reflect.Field)worldField).get(mc);
-        } catch (Exception e) { return null; }
-    }
-
-    private Object getPlayer() {
-        try {
-            if (playerField == null) return null;
-            return ((java.lang.reflect.Field)playerField).get(mc);
-        } catch (Exception e) { return null; }
-    }
-
-    private int getWorldMinY() {
-        try {
-            Object world = getWorld();
-            if (world == null || worldMinYMethod == null) return 0;
-            return (int) ((java.lang.reflect.Method)worldMinYMethod).invoke(world);
-        } catch (Exception e) { return 0; }
-    }
-
-    private int getWorldHeight() {
-        try {
-            Object world = getWorld();
-            if (world == null || worldHeightMethod == null) return 320;
-            return (int) ((java.lang.reflect.Method)worldHeightMethod).invoke(world);
-        } catch (Exception e) { return 320; }
-    }
-
-    private int getViewDistance() {
-        try {
-            if (optionsField == null) return 8;
-            Object options = ((java.lang.reflect.Field)optionsField).get(mc);
-            if (options == null) return 8;
-            
-            // Find view distance option
-            for (var f : options.getClass().getDeclaredFields()) {
-                String typeName = f.getType().getName();
-                if (typeName.contains("Option") || typeName.contains("OptionSlider")) {
-                    viewDistanceField = f;
-                    f.setAccessible(true);
-                    Object opt = f.get(options);
-                    if (opt != null) {
-                        var method = opt.getClass().getMethod("getValue");
-                        return (int) method.invoke(opt);
-                    }
-                }
-            }
-        } catch (Exception e) {}
-        return 8;
-    }
-
-    private double getPlayerPos(Object player, String axis) {
-        try {
-            // Try field approach
-            for (var f : player.getClass().getSuperclass().getDeclaredFields()) {
-                String fname = f.getName();
-                if (axis.equals("x") && fname.contains("x")) {
-                    f.setAccessible(true);
-                    return f.getDouble(player);
-                }
-                if (axis.equals("y") && fname.contains("y")) {
-                    f.setAccessible(true);
-                    return f.getDouble(player);
-                }
-                if (axis.equals("z") && fname.contains("z")) {
-                    f.setAccessible(true);
-                    return f.getDouble(player);
-                }
-            }
-        } catch (Exception e) {}
-        return 0;
-    }
-
-    private Object getChunk(Object world, int cx, int cz) {
-        try {
-            for (var m : world.getClass().getMethods()) {
-                if (m.getName().toLowerCase().contains("getchunk") && m.getParameterCount() == 2) {
-                    m.setAccessible(true);
-                    return m.invoke(world, cx, cz);
-                }
-            }
-        } catch (Exception e) {}
-        return null;
-    }
-
-    private Map<?, ?> getBlockEntities(Object chunk) {
-        try {
-            for (var f : chunk.getClass().getDeclaredFields()) {
-                if (f.getType().getSimpleName().contains("Map")) {
-                    f.setAccessible(true);
-                    return (Map<?, ?>) f.get(chunk);
-                }
-            }
-        } catch (Exception e) {}
-        return null;
-    }
-
     @Override
     public void onActivate() {
-        initReflection();
         spawnerChunks.clear();
         rescan();
     }
@@ -238,8 +80,8 @@ public class SpawnerChunks extends Module {
             Object world = getWorld();
             if (world == null) return;
             
-            int minY = getWorldMinY();
-            int maxY = minY + getWorldHeight();
+            int minY = getWorldMinY(world);
+            int maxY = minY + getWorldHeight(world);
             
             for (BlockPos chunkPos : spawnerChunks) {
                 int startX = chunkPos.getX() << 4;
@@ -262,8 +104,8 @@ public class SpawnerChunks extends Module {
             if (world == null || player == null) return;
             
             int viewDist = getViewDistance();
-            double px = getPlayerPos(player, "x");
-            double pz = getPlayerPos(player, "z");
+            double px = getPlayerX(player);
+            double pz = getPlayerZ(player);
             int playerChunkX = (int) Math.floor(px / 16.0);
             int playerChunkZ = (int) Math.floor(pz / 16.0);
             
@@ -292,5 +134,121 @@ public class SpawnerChunks extends Module {
         } catch (Exception e) {
             // Silent fail
         }
+    }
+    
+    private Object getWorld() {
+        try {
+            for (var f : mc.getClass().getDeclaredFields()) {
+                if (f.getType().getName().contains("World")) {
+                    f.setAccessible(true);
+                    return f.get(mc);
+                }
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+    
+    private Object getPlayer() {
+        try {
+            for (var f : mc.getClass().getDeclaredFields()) {
+                if (f.getType().getName().contains("Entity")) {
+                    f.setAccessible(true);
+                    return f.get(mc);
+                }
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+    
+    private int getWorldMinY(Object world) {
+        try {
+            for (var m : world.getClass().getMethods()) {
+                if (m.getParameterCount() == 0 && m.getName().toLowerCase().contains("bottom")) {
+                    return (int) m.invoke(world);
+                }
+            }
+        } catch (Exception e) {}
+        return 0;
+    }
+    
+    private int getWorldHeight(Object world) {
+        try {
+            for (var m : world.getClass().getMethods()) {
+                if (m.getParameterCount() == 0 && (m.getName().toLowerCase().contains("height") || m.getName().toLowerCase().contains("top"))) {
+                    return (int) m.invoke(world);
+                }
+            }
+        } catch (Exception e) {}
+        return 320;
+    }
+    
+    private int getViewDistance() {
+        try {
+            for (var f : mc.getClass().getDeclaredFields()) {
+                if (f.getType().getName().contains("Options")) {
+                    f.setAccessible(true);
+                    Object opts = f.get(mc);
+                    if (opts != null) {
+                        for (var vf : opts.getClass().getDeclaredFields()) {
+                            if (vf.getType().getSimpleName().contains("Option")) {
+                                vf.setAccessible(true);
+                                Object opt = vf.get(opts);
+                                if (opt != null) {
+                                    return (int) opt.getClass().getMethod("getValue").invoke(opt);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {}
+        return 8;
+    }
+    
+    private double getPlayerX(Object player) {
+        try {
+            for (var f : player.getClass().getDeclaredFields()) {
+                if (f.getName().contains("x")) {
+                    f.setAccessible(true);
+                    return f.getDouble(player);
+                }
+            }
+        } catch (Exception e) {}
+        return 0;
+    }
+    
+    private double getPlayerZ(Object player) {
+        try {
+            for (var f : player.getClass().getDeclaredFields()) {
+                if (f.getName().contains("z")) {
+                    f.setAccessible(true);
+                    return f.getDouble(player);
+                }
+            }
+        } catch (Exception e) {}
+        return 0;
+    }
+    
+    private Object getChunk(Object world, int cx, int cz) {
+        try {
+            for (var m : world.getClass().getMethods()) {
+                if (m.getName().toLowerCase().contains("getchunk") && m.getParameterCount() == 2) {
+                    return m.invoke(world, cx, cz);
+                }
+            }
+        } catch (Exception e) {}
+        return null;
+    }
+    
+    private Map<?, ?> getBlockEntities(Object chunk) {
+        try {
+            for (var f : chunk.getClass().getDeclaredFields()) {
+                if (f.getType().getSimpleName().contains("Map")) {
+                    f.setAccessible(true);
+                    return (Map<?, ?>) f.get(chunk);
+                }
+            }
+        } catch (Exception e) {}
+        return null;
     }
 }
