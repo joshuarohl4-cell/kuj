@@ -95,8 +95,30 @@ public class RenderDistanceToggle extends Module {
         try {
             Object player = getPlayer();
             if (player == null) return Double.MAX_VALUE;
+            
+            // Try getter methods first
+            for (var m : player.getClass().getMethods()) {
+                if (m.getParameterCount() == 0) {
+                    String name = m.getName();
+                    if (name.equals("getY") || name.equals("method_31478") || name.equals("getPos")) {
+                        Object result = m.invoke(player);
+                        if (result instanceof Double) return (Double) result;
+                        if (result != null && result.getClass().getSimpleName().contains("Vec3")) {
+                            // It's a Vec3d, get Y from it
+                            for (var gf : result.getClass().getMethods()) {
+                                if (gf.getName().contains("getY") || gf.getName().equals("y")) {
+                                    return (Double) gf.invoke(result);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Try direct field access
             for (var f : player.getClass().getSuperclass().getDeclaredFields()) {
-                if (f.getName().contains("y")) {
+                String name = f.getName();
+                if (name.equals("y") || name.equals("field_11440") || name.contains("yCoord")) {
                     f.setAccessible(true);
                     return f.getDouble(player);
                 }
@@ -133,7 +155,12 @@ public class RenderDistanceToggle extends Module {
 
     @EventHandler
     private void onTick(TickEvent.Post event) {
-        initReflection();
+        // Try to init, reset if failed
+        if (!init || playerField == null) {
+            init = false;
+            initReflection();
+        }
+        
         double playerY = getPlayerY();
         if (playerY == Double.MAX_VALUE) return;
 
