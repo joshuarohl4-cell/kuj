@@ -1,7 +1,6 @@
 package com.example.addon.modules;
 
 import com.example.addon.AddonTemplate;
-import com.example.addon.utils.MinecraftAccess;
 import meteordevelopment.meteorclient.events.game.GameLeftEvent;
 import meteordevelopment.meteorclient.events.render.Render3DEvent;
 import meteordevelopment.meteorclient.events.world.TickEvent;
@@ -76,25 +75,56 @@ public class SpawnerChunks extends Module {
 
     @EventHandler
     private void onRender(Render3DEvent event) {
-        int minY = MinecraftAccess.getWorldMinY(mc);
-        int maxY = minY + MinecraftAccess.getWorldHeight(mc);
-        
-        for (BlockPos chunkPos : spawnerChunks) {
-            int startX = chunkPos.getX() << 4;
-            int startZ = chunkPos.getZ() << 4;
-            int endX = startX + 16;
-            int endZ = startZ + 16;
+        try {
+            if (mc.world == null) return;
             
-            AABB box = new AABB(startX, minY, startZ, endX, maxY, endZ);
-            event.renderer.box(box, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
+            int minY = mc.world.getBottomY();
+            int maxY = mc.world.getTopY();
+            
+            for (BlockPos chunkPos : spawnerChunks) {
+                int startX = chunkPos.getX() << 4;
+                int startZ = chunkPos.getZ() << 4;
+                int endX = startX + 16;
+                int endZ = startZ + 16;
+                
+                AABB box = new AABB(startX, minY, startZ, endX, maxY, endZ);
+                event.renderer.box(box, sideColor.get(), lineColor.get(), shapeMode.get(), 0);
+            }
+        } catch (Exception e) {
+            // Ignore render errors
         }
     }
 
     private void rescan() {
-        spawnerChunks.clear();
-        Set<BlockPos> chunks = MinecraftAccess.findSpawnerChunks(mc);
-        if (chunks != null) {
-            spawnerChunks.addAll(chunks);
+        try {
+            spawnerChunks.clear();
+            
+            if (mc.world == null || mc.player == null) return;
+            
+            int viewDist = mc.options.getViewDistance().getValue();
+            int playerChunkX = (int) Math.floor(mc.player.getX() / 16.0);
+            int playerChunkZ = (int) Math.floor(mc.player.getZ() / 16.0);
+            
+            for (int cx = playerChunkX - viewDist; cx <= playerChunkX + viewDist; cx++) {
+                for (int cz = playerChunkZ - viewDist; cz <= playerChunkZ + viewDist; cz++) {
+                    var chunk = mc.world.getChunk(cx, cz);
+                    boolean hasSpawner = false;
+                    
+                    for (var blockEntity : chunk.getBlockEntities().values()) {
+                        String name = blockEntity.getClass().getSimpleName();
+                        if (name.contains("MobSpawner") || name.contains("SpawnerBlockEntity")) {
+                            hasSpawner = true;
+                            break;
+                        }
+                    }
+                    
+                    if (hasSpawner) {
+                        spawnerChunks.add(new BlockPos(cx, 0, cz));
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // Ignore scan errors
         }
     }
 }
